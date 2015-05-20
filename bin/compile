@@ -1,0 +1,179 @@
+#!/bin/bash
+# usage: bin/compile <build-dir> <cache-dir> <env-dir>
+
+set -eo pipefail
+
+
+# Go releases have moved to a new URL scheme
+# starting with Go version 1.2.2. Return the old
+# location for known old versions and the new
+# location otherwise.
+urlfor() {
+    ver=$1
+    file=$2
+    case $ver in
+    go1.0*|go1.1beta*|go1.1rc*|go1.1|go1.1.*|go1.2beta*|go1.2rc*|go1.2|go1.2.1)
+        echo http://go.googlecode.com/files/$file
+        ;;
+    *)
+        echo https://storage.googleapis.com/golang/$file
+        ;;
+    esac
+}
+
+mkdir -p "$1" "$2"
+build=$(cd "$1/" && pwd)
+cache=$(cd "$2/" && pwd)
+buildpack=$(cd "$(dirname $0)/.." && pwd)
+arch=$(uname -m|tr A-Z a-z)
+if test $arch = x86_64
+then arch=amd64
+fi
+plat=$(uname|tr A-Z a-z)-$arch
+
+# Python
+# venv=$cache/venv
+# mkdir -p $cache/pip
+# python=python2.7
+# PATH=$buildpack/$plat/bin:$venv/bin:$PATH
+
+# virtualenv() {
+#     python "$buildpack/vendor/virtualenv-1.11.6/virtualenv.py" "$@"
+# }
+
+# if test -f $build/Godeps
+# then
+#     name=$(<$build/Godeps jq -r .ImportPath)
+#     ver=$(<$build/Godeps jq -r .GoVersion)
+# elif test -d $build/Godeps
+# then
+#     name=$(<$build/Godeps/Godeps.json jq -r .ImportPath)
+#     ver=$(<$build/Godeps/Godeps.json jq -r .GoVersion)
+# elif test -f $build/.godir
+# then
+#     name=$(cat $build/.godir)
+#     ver=go${GOVERSION:-1.4.2}
+# else
+#     echo >&2 " !     Godeps are required. For instructions:"
+#     echo >&2 " !     https://medium.com/@freeformz/hello-world-with-go-heroku-38295332f07b"
+#     exit 1
+# fi
+#  echo >&2 " !     Bypassing Godeps..."
+
+# Install Go
+ver=go${GOVERSION:-1.4.2}
+file=${GOFILE:-$ver.$(uname|tr A-Z a-z)-amd64$(platext $ver).tar.gz}
+url=${GOURL:-$(urlfor $ver $file)}
+
+if test -e $build/bin && ! test -d $build/bin
+then
+    echo >&2 " !     File bin exists and is not a directory."
+    exit 1
+fi
+
+if test -d $cache/$ver/go
+then
+    echo "-----> Using $ver"
+else
+    rm -rf $cache/* # be sure not to build up cruft
+    mkdir -p $cache/$ver
+    cd $cache/$ver
+    echo -n "-----> Installing $ver..."
+    curl -sO $url
+    tar zxf $file
+    rm -f $file
+    echo " done"
+    cd - >/dev/null
+fi
+
+mkdir -p $build/bin
+GOBIN=$build/bin export GOBIN
+GOROOT=$cache/$ver/go export GOROOT
+GOPATH=$build/.heroku/g export GOPATH
+PATH=$GOROOT/bin:$PATH
+
+
+# if ! (test -d $build/Godeps || (which hg >/dev/null && which bzr >/dev/null))
+# then
+#     echo
+#     echo "       Tired of waiting for bzr and hg?"
+#     echo "       Try github.com/kr/godep for faster deploys."
+#     echo
+
+#     echo -n "       Installing Virtualenv..."
+#     virtualenv --python $python --distribute --never-download --prompt='(venv) ' $venv > /dev/null 2>&1
+#     . $venv/bin/activate > /dev/null 2>&1
+#     echo " done"
+
+#     echo -n "       Installing Mercurial..."
+#     pip install mercurial > /dev/null 2>&1
+#     echo " done"
+
+#     echo -n "       Installing Bazaar..."
+#     pip install bzr > /dev/null 2>&1
+#     echo " done"
+# fi
+
+p=$GOPATH/src/$name
+mkdir -p $p
+cp -R $build/* $p
+
+# Default to $SOURCE_VERSION environment variable
+GO_LINKER_VALUE=${SOURCE_VERSION}
+
+# allow apps to specify cgo flags and set up /app symlink so things like CGO_CFLAGS=-I/app/... work
+env_dir="$3"
+if [ -d "$env_dir" ]
+then
+    ln -sfn $build /app/code
+  for key in CGO_CFLAGS CGO_CPPFLAGS CGO_CXXFLAGS CGO_LDFLAGS GO_LINKER_SYMBOL GO_LINKER_VALUE
+    do
+        if [ -f "$env_dir/$key" ]
+        then
+            export "$key=$(cat "$env_dir/$key")"
+        fi
+    done
+fi
+
+# If $GO_LINKER_SYMBOL and GO_LINKER_VALUE are set, tell the linker to DTRT
+FLAGS=(-tags heroku)
+if [ -n "$GO_LINKER_SYMBOL" -a -n "$GO_LINKER_VALUE" ]
+then
+  FLAGS=(${FLAGS[@]} -ldflags "-X $GO_LINKER_SYMBOL $GO_LINKER_VALUE")
+fi
+
+unset GIT_DIR # unset git dir or it will mess with goinstall
+cd $p
+# if test -e $build/Godeps
+# then
+#     echo "-----> Running: godep go install ${FLAGS[@]} ./..."
+#     godep go install "${FLAGS[@]}" ./...
+# else
+#     echo "-----> Running: go get ${FLAGS[@]} ./...
+#     go get "${FLAGS[@]}" ./...
+# fi
+
+GOPATH="$GOPATH/src"
+ln -s $GOPATH/vendor/src/* $GOPATH/src/
+
+echo "GOPATH: $GOPATH"
+ls -al $GOPATH
+
+echo "GOPATH: $GOPATH/src"
+ls -al $GOPATH/src
+
+echo "build: $build"
+ls -al $build
+
+echo "------> Running: go build ${FLAGS[@]} main"
+go build "${FLAGS[@]}" main
+mv main $build/bin
+
+    # ln -s vendor/src/* src/
+    # GOPATH=./src
+    # go build main
+
+rm -rf $build/.heroku
+
+mkdir -p $build/.profile.d
+echo 'PATH=$PATH:$HOME/bin' > $build/.profile.d/go.sh
