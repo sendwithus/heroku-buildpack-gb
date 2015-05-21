@@ -6,16 +6,17 @@ Note this buildpack does *not* use `gb` to compile the app; it only compiles app
 
 This buildpack is based heavily on [heroku-buildpack-go](https://github.com/heroku/heroku-buildpack-go), and currently intended for experimentation only. It was built and is maintained by the development team at [sendwithus](https://www.sendwithus.com).
 
-#### Example project structure
+#### Example Project Structure
+```
+root/
+  src/
+    main/
+      main.go
+  vendor/
+    github.com/...
+```
 
-* root/
-  * src/
-    * main/
-      * main.go
-  * vendor/
-    * github.com/...
-
-#### Example Procfile:
+#### Example Procfile
 ```yaml
 web: bin/main -PORT=$PORT
 ```
