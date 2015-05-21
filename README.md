@@ -18,5 +18,5 @@ root/
 
 #### Example Procfile
 ```yaml
-web: bin/main -PORT=$PORT
+web: main -PORT=$PORT
 ```
