@@ -94,7 +94,7 @@ ln -s $GOPATH/vendor/src/* $GOPATH/src/
 # Build
 echo "------> Running: go build app"
 go build app
-mv main $build/bin
+mv app $build/bin
 
 # Cleanup
 rm -rf $build/.heroku
