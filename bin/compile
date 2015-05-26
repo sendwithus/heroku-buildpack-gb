@@ -92,8 +92,8 @@ GOPATH="$GOPATH/src"
 ln -s $GOPATH/vendor/src/* $GOPATH/src/
 
 # Build
-echo "------> Running: go build main"
-go build main
+echo "------> Running: go build app"
+go build app
 mv main $build/bin
 
 # Cleanup
